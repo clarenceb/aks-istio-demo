@@ -72,6 +72,17 @@ Deploy observability add-ons
 ----------------------------
 
 ```sh
+# Prometheus - metrics
+curl -s https://raw.githubusercontent.com/istio/istio/release-1.17/samples/addons/prometheus.yaml | sed 's/istio-system/aks-istio-system/g' | kubectl apply -f -
+
+# Grafana - monitoring and metrics dashboards
+curl -s https://raw.githubusercontent.com/istio/istio/release-1.17/samples/addons/grafana.yaml | sed 's/istio-system/aks-istio-system/g' | kubectl apply -f -
+
+# Jaeger - distributed tracing
+curl -s https://raw.githubusercontent.com/istio/istio/release-1.17/samples/addons/jaeger.yaml | sed 's/istio-system/aks-istio-system/g' | kubectl apply -f -
+
+# Kiali - visualising the mesh
+curl -s https://raw.githubusercontent.com/istio/istio/release-1.17/samples/addons/kiali.yaml | sed 's/istio-system/aks-istio-system/g' | kubectl apply -f -
 ```
 
 Cleanup
