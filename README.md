@@ -88,6 +88,7 @@ curl -s https://raw.githubusercontent.com/istio/istio/release-1.17/samples/addon
 # Jaeger - distributed tracing
 curl -s https://raw.githubusercontent.com/istio/istio/release-1.17/samples/addons/jaeger.yaml | sed 's/istio-system/aks-istio-system/g' | kubectl apply -f -
 
+# Kiali installation
 helm install \
     --version=1.63.1 \
     --set cr.create=true \
@@ -99,7 +100,73 @@ helm install \
 
 # Generate a short-lived token to login to Kiali UI
 kubectl -n aks-istio-system create token kiali-service-account
+
+# Port forward to Istio service to access on http://localhost:20001
+kubectl port-forward svc/kiali 20001:20001 -n aks-istio-system
 ```
+
+Generate some app traffic to observe in Kiali UI
+------------------------------------------------
+
+```sh
+for i in $(seq 1 100); do curl -o /dev/null -s -w "Request: ${i}, Response: %{http_code}\n" "http://$GATEWAY_URL_EXTERNAL/productpage"; done
+```
+
+Browse to Kiali UI: [http://localhost:20001](http://localhost:20001)
+
+View Prometheus Metrics
+-----------------------
+
+```sh
+kubectl port-forward -n aks-istio-system svc/prometheus 9090:9090
+```
+
+Browse to Prometheus UI: [http://localhost:9090](http://localhost:9090)
+
+View the total Istio requests metric:
+
+```promql
+sum(istio_requests_total)
+```
+
+[Prometheus metrics shortcut link](http://localhost:9090/graph?g0.expr=sum(istio_requests_total)&g0.tab=0&g0.stacked=0&g0.show_exemplars=0&g0.range_input=15m)
+
+Setup up Grafana
+----------------
+
+```sh
+kubectl port-forward -n aks-istio-system svc/grafana 3000:3000
+```
+
+Browse to Grafana: [http://localhost:3000](http://localhost:3000)
+
+Add a datasource for Prometheus:
+
+* URL: http://prometheus.aks-istio-system.svc.cluster.local:9090
+* Set this datasource as the default
+* Save and Test
+
+The Istio dashboards should already be loaded into Grafana.
+
+Choose one of the dashboards to view.
+
+View distributed traces in Jaeger
+---------------------------------
+
+```sh
+JAEGER_POD=$(kubectl get pods -n aks-istio-system --no-headers  --selector app=jaeger | awk 'NR==1{print $1}')
+kubectl port-forward -n jaeger $JAEGER_POD  16686:16686
+```
+
+Browse to Jaeger UI: [http://localhost:16686](http://localhost:16686)
+
+* Select service `productpage.bookinfo`
+* Click **Find Traces**
+* Explore one of the traces
+* Select **Trace Graph** from the top right drop down
+* Click **Search** at the top left menu bar
+* Click **Deep dependency graph**
+* Click **System Architecture** / **DAG**
 
 Cleanup
 -------
@@ -117,7 +184,9 @@ az group delete --name ${RESOURCE_GROUP} --yes --no-wait
 Resources
 ---------
 
+* 
+
 TODO
 ----
 
-- Switch Grafana and Prometheus to Azure managed PaaS versions
+* Switch Grafana and Prometheus to Azure managed versions, see [Istio Service Mesh AKS Add-on](https://www.youtube.com/watch?v=CifKWSnX8C8) on YouTube at 39:39 min:sec mark
