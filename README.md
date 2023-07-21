@@ -59,6 +59,7 @@ Deploy Bookinfo sample application
 kubectl create ns bookinfo
 kubectl label namespace bookinfo istio.io/rev=asm-1-17
 kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/platform/kube/bookinfo.yaml -n bookinfo
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/destination-rule-all.yaml -n bookinfo
 kubectl get services -n bookinfo
 kubectl get pods -n bookinfo
 
@@ -168,10 +169,223 @@ Browse to Jaeger UI: [http://localhost:16686](http://localhost:16686)
 * Click **Deep dependency graph**
 * Click **System Architecture** / **DAG**
 
+Request Routing
+---------------
+
+Requests by default will cycle through all versions.
+
+```sh
+# Route all requests to v1 of each service
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-all-v1.yaml -n bookinfo
+
+# Route all traffic from a user named Jason the service reviews:v2
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-reviews-test-v2.yaml -n bookinfo
+```
+
+Log in as user: jason, password: jason
+
+* Refresh product page to see black stars (review:v2)
+* You can see user "jason" in the session cookie by decoding the JWT token at https://jwt.io/
+
+Logout user
+
+* Refresh product page to see no stars (review:v1)
+
+Traffic Shifting
+----------------
+
+Shift traffic from reviews:v1 to reviews:v3
+
+```sh
+# 50% split v1 and v3
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-reviews-50-v3.yaml -n bookinfo
+
+# 100% to v3
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/bookinfo/networking/virtual-service-reviews-v3.yaml -n bookinfo
+```
+
+Fault Injection
+---------------
+
+```sh
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-all-v1.yaml -n bookinfo
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-reviews-test-v2.yaml -n bookinfo
+```
+
+With the above configuration, this is how requests flow:
+
+* productpage → reviews:v2 → ratings (only for user jason)
+* productpage → reviews:v1 (for everyone else)
+
+### Inject HTTP delay fault
+
+```sh
+# Inject a 7s delay between the reviews:v2 and ratings microservices only for user 'jason'
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.18/samples/bookinfo/networking/virtual-service-ratings-test-delay.yaml -n bookinfo
+```
+
+* Refresh the product page as user 'json'
+* Error "Sorry, product reviews are currently unavailable for this book." is displayed as ratings delay of 7 sec exceed reviews:v2 timeout of 6 seconds
+
+```sh
+kubectl apply -f ./virtual-service-ratings-test-delay-2s.yaml -n bookinfo
+```
+
+* Refresh the product page as user 'json'
+* Product page now loads as the delay is less than the product page timeout
+
+### Inject HTTP abort fault
+
+```sh
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-all-v1.yaml -n bookinfo
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-reviews-test-v2.yaml -n bookinfo
+
+kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-ratings-test-abort.yaml -n bookinfo
+```
+
+* Log in as user 'json'
+* Refresh product page
+* "Ratings service is currently unavailable" is shown for rating
+* Logout
+* Refresh product page
+* Ratings appear again
+* Run some requests as a logged out user:
+
+```sh
+for i in $(seq 1 100); do curl -o /dev/null -s -w "Request: ${i}, Response: %{http_code}\n" "http://$GATEWAY_URL_EXTERNAL/productpage"; done
+```
+
+* Show reviews:v1 and reviews:v2 in Kiali graph to see v1 succeeding and v2 failing
+
+L7 traffic authorization policies
+---------------------------------
+
+```sh
+# Round-robin reviews v1/v2/v3
+kubectl delete -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-all-v1.yaml -n bookinfo
+
+# Deny all traffic in the mesh
+kubectl apply -f - <<EOF
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-nothing
+  namespace: bookinfo
+spec:
+  {}
+EOF
+```
+
+* Refresh productpage: "RBAC: access denied"
+
+```sh
+# Allow access to product page for all clients
+kubectl apply -f - <<EOF
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: "productpage-viewer"
+  namespace: bookinfo
+spec:
+  selector:
+    matchLabels:
+      app: productpage
+  action: ALLOW
+  rules:
+  - to:
+    - operation:
+        methods: ["GET"]
+EOF
+```
+
+* Refresh productpage: page loads but product details and reviews fail
+
+```sh
+# Allow product page to fetch product details
+kubectl apply -f - <<EOF
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: "details-viewer"
+  namespace: bookinfo
+spec:
+  selector:
+    matchLabels:
+      app: details
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/bookinfo/sa/bookinfo-productpage"]
+    to:
+    - operation:
+        methods: ["GET"]
+EOF
+
+# Allow product page to fetch reviews
+kubectl apply -f - <<EOF
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: "reviews-viewer"
+  namespace: bookinfo
+spec:
+  selector:
+    matchLabels:
+      app: reviews
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/bookinfo/sa/bookinfo-productpage"]
+    to:
+    - operation:
+        methods: ["GET"]
+EOF
+
+# Allow reviews to fetch ratings
+kubectl apply -f - <<EOF
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: "ratings-viewer"
+  namespace: bookinfo
+spec:
+  selector:
+    matchLabels:
+      app: ratings
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/bookinfo/sa/bookinfo-reviews"]
+    to:
+    - operation:
+        methods: ["GET"]
+EOF
+```
+
+
+Reset app state
+---------------
+
+```sh
+kubectl delete authorizationpolicy.security.istio.io/allow-nothing -n bookinfo
+kubectl delete authorizationpolicy.security.istio.io/productpage-viewer -n bookinfo
+kubectl delete authorizationpolicy.security.istio.io/details-viewer -n bookinfo
+kubectl delete authorizationpolicy.security.istio.io/reviews-viewer -n bookinfo
+kubectl delete authorizationpolicy.security.istio.io/ratings-viewer -n bookinfo
+
+kubectl delete -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-all-v1.yaml -n bookinfo
+```
+
 Cleanup
 -------
 
 ```sh
+kubectl delete AuthorizationPolicy allow-nothing -n bookinfo
+kubectl delete -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/virtual-service-all-v1.yaml -n bookinfo
+kubectl delete -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/networking/destination-rule-all.yaml -n bookinfo
 kubectl delete -f https://raw.githubusercontent.com/istio/istio/release-1.17/samples/bookinfo/platform/kube/bookinfo.yaml -n bookinfo
 kubectl delete ns bookinfo
 
@@ -184,7 +398,7 @@ az group delete --name ${RESOURCE_GROUP} --yes --no-wait
 Resources
 ---------
 
-* 
+* [Istio docs](https://istio.io/latest/docs/)
 
 TODO
 ----
