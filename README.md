@@ -365,7 +365,6 @@ spec:
 EOF
 ```
 
-
 Reset app state
 ---------------
 
