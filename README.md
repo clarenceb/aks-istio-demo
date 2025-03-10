@@ -198,6 +198,27 @@ EOF
 
 kubectl apply -f secrets-store-sync-pod.yaml
 ```
+
+### (Optional) Create TLS secret directly in Kubernetes
+
+If you don't want top set up Azure Key Vault and sync the secret you can just import it directly:
+
+```sh
+cat <<EOF > istio-ingress-tls-secret.yaml
+apiVersion: v1
+data:
+  tls.crt: $(cat istio-demo.crt | base64 -w 0)
+  tls.key: $(cat istio-demo.key | base64 -w 0)
+kind: Secret
+metadata:
+  name: istiodemo-credential
+  namespace: aks-istio-ingress
+type: kubernetes.io/tls
+EOF
+
+kubectl apply -f istio-ingress-tls-secret.yaml
+```
+
 ### Create TLS Istio Gateway and Virtual Service for your domain
 
 ```sh
