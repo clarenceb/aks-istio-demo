@@ -1,1 +1,6 @@
 samples/
+*.crt
+*.key
+secret-provider-class.yaml
+secrets-store-sync-pod.yaml
+bookinfo-ingress.yaml

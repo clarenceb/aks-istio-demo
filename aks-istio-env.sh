@@ -1,4 +1,4 @@
-export CLUSTER=istio-addon
-export RESOURCE_GROUP=istio-addon
+export CLUSTER=aks-frankbuzzard56
+export RESOURCE_GROUP=rg-aks-store-demo
 export LOCATION=australiasoutheast
-export K8S_VERSION=1.27.1
+export K8S_VERSION=1.30.9
