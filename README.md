@@ -69,8 +69,7 @@ az aks mesh enable --resource-group ${RESOURCE_GROUP} --name ${CLUSTER} --revisi
 az aks show --resource-group ${RESOURCE_GROUP} --name ${CLUSTER}  --query 'serviceMeshProfile.mode'
 ```
 
-Install `istioctl` CLI tool
----------------------------
+## (Optional) Install `istioctl` CLI tool
 
 ```sh
 ISTIO_VERSION="$(kubectl get deploy istiod-${REVISION} -n aks-istio-system -o yaml | grep image: | egrep -o '[0-9]+\.[0-9]+\.[0-9]+')"
@@ -82,8 +81,7 @@ rm -rf "./istio-${ISTIO_VERSION}/"
 istioctl -i aks-istio-system version
 ```
 
-(Optional) Enable external Ingress Gateway
--------------------------------
+## Enable external Ingress Gateway
 
 ```sh
 az aks mesh enable-ingress-gateway --resource-group $RESOURCE_GROUP --name $CLUSTER --ingress-gateway-type external
@@ -94,7 +92,7 @@ kubectl get svc aks-istio-ingressgateway-external -n aks-istio-ingress
 
 Turn TLS on on our Ingress Gateway.
 
-## Obtain/Generate TLS certificate and private key
+### Obtain/Generate TLS certificate and private key
 
 You'll need a TLS certificate and private key.
 You can generate a self-signed one like described here **[Secure ingress gateway for Istio service mesh add-on for Azure Kubernetes Service](https://learn.microsoft.com/en-us/azure/aks/istio-secure-gateway#required-clientserver-certificates-and-keys)**
@@ -199,7 +197,10 @@ spec:
 EOF
 
 kubectl apply -f secrets-store-sync-pod.yaml
+```
+### Create TLS Istio Gateway and Virtual Service for your domain
 
+```sh
 kubectl create ns bookinfo
 
 cat <<EOF > bookinfo-ingress.yaml
@@ -254,8 +255,7 @@ EOF
 kubectl apply -f bookinfo-ingress.yaml
 ```
 
-Deploy Bookinfo sample application
-----------------------------------
+## Deploy Bookinfo sample application
 
 ```sh
 kubectl create ns bookinfo
@@ -288,8 +288,7 @@ echo $PRODUCT_PAGE
 curl -s $PRODUCT_PAGE | grep -o "<title>.*</title>"
 ```
 
-Deploy observability add-ons
-----------------------------
+## Deploy observability add-ons
 
 ```sh
 # Prometheus - metrics
@@ -320,8 +319,7 @@ kubectl -n aks-istio-system create token kiali-service-account
 kubectl port-forward svc/kiali 20001:20001 -n aks-istio-system
 ```
 
-Generate some app traffic to observe in Kiali UI
-------------------------------------------------
+## Generate some app traffic to observe in Kiali UI
 
 ```sh
 for i in $(seq 1 100); do curl -o /dev/null -s -w "Request: ${i}, Response: %{http_code}\n" "$PRODUCT_PAGE"; done
@@ -329,8 +327,7 @@ for i in $(seq 1 100); do curl -o /dev/null -s -w "Request: ${i}, Response: %{ht
 
 Browse to Kiali UI: [http://localhost:20001](http://localhost:20001)
 
-View Prometheus Metrics
------------------------
+## View Prometheus Metrics
 
 ```sh
 kubectl port-forward -n aks-istio-system svc/prometheus 9090:9090
@@ -346,8 +343,7 @@ sum(istio_requests_total)
 
 [Prometheus metrics shortcut link](http://localhost:9090/graph?g0.expr=sum(istio_requests_total)&g0.tab=0&g0.stacked=0&g0.show_exemplars=0&g0.range_input=15m)
 
-Setup up Grafana
-----------------
+## Setup up Grafana
 
 ```sh
 kubectl port-forward -n aks-istio-system svc/grafana 3000:3000
@@ -366,8 +362,7 @@ The Istio dashboards should already be loaded into Grafana.
 
 Choose one of the dashboards to view.
 
-View distributed traces in Jaeger
----------------------------------
+## View distributed traces in Jaeger
 
 ```sh
 JAEGER_POD=$(kubectl get pods -n aks-istio-system --no-headers  --selector app=jaeger | awk 'NR==1{print $1}')
@@ -387,8 +382,7 @@ Browse to Jaeger UI: [http://localhost:16686](http://localhost:16686)
 * Click **Deep dependency graph**
 * Click **System Architecture** / **DAG**
 
-Request Routing
----------------
+## Request Routing
 
 Requests by default will cycle through all versions.
 
@@ -409,8 +403,7 @@ Logout user
 
 * Refresh product page to see no stars (review:v1)
 
-Traffic Shifting
-----------------
+## Traffic Shifting
 
 Shift traffic from reviews:v1 to reviews:v3
 
@@ -422,8 +415,7 @@ kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-${ISTIO_R
 kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-${ISTIO_RELEASE}/samples/bookinfo/networking/virtual-service-reviews-v3.yaml -n bookinfo
 ```
 
-Fault Injection
----------------
+## Fault Injection
 
 ```sh
 kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-${ISTIO_RELEASE}/samples/bookinfo/networking/virtual-service-all-v1.yaml -n bookinfo
@@ -475,8 +467,7 @@ for i in $(seq 1 100); do curl -o /dev/null -s -w "Request: ${i}, Response: %{ht
 
 * Show reviews:v1 and reviews:v2 in Kiali graph to see v1 succeeding and v2 failing
 
-L7 traffic authorization policies
----------------------------------
+## L7 traffic authorization policies
 
 ```sh
 # Round-robin reviews v1/v2/v3
@@ -583,8 +574,7 @@ spec:
 EOF
 ```
 
-Reset app state
----------------
+## Reset app state
 
 ```sh
 kubectl delete authorizationpolicy.security.istio.io/allow-nothing -n bookinfo
@@ -596,8 +586,7 @@ kubectl delete authorizationpolicy.security.istio.io/ratings-viewer -n bookinfo
 kubectl delete -f https://raw.githubusercontent.com/istio/istio/release-${ISTIO_RELEASE}/samples/bookinfo/networking/virtual-service-all-v1.yaml -n bookinfo
 ```
 
-Cleanup
--------
+## Cleanup
 
 ```sh
 kubectl delete AuthorizationPolicy allow-nothing -n bookinfo
@@ -612,13 +601,11 @@ kubectl delete crd $(kubectl get crd -A | grep "istio.io" | awk '{print $1}')
 az group delete --name ${RESOURCE_GROUP} --yes --no-wait
 ```
 
-Resources
----------
+## Resources
 
 * [Istio docs](https://istio.io/latest/docs/)
 
-TODO
-----
+## TODO
 
 * Switch Grafana and Prometheus to Azure managed versions, see [Istio Service Mesh AKS Add-on](https://www.youtube.com/watch?v=CifKWSnX8C8) on YouTube at 39:39 min:sec mark or [Collect metrics for Istio service mesh add-on workloads for Azure Kubernetes Service in Azure Managed Prometheus](https://learn.microsoft.com/en-us/azure/aks/istio-metrics-managed-prometheus)
 * Egress rules with REGISTRY_ONLY outbound policy and service entries
